@@ -441,7 +441,7 @@ bot.on('message:text', async (ctx) => {
             await ctx.reply('Пожалуйста, введите корректное число.');
             return;
         }
-        
+
 
         // Проверка лимита (1505 юаней ≈ 200 евро)
         if (userInput > 1505) {
@@ -449,6 +449,7 @@ bot.on('message:text', async (ctx) => {
             return;
         }
 
+        
         // Дополнительная стоимость в зависимости от категории
         let additionalCost = 0;
         if (session.category === 'Обувь') {
