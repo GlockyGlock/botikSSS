@@ -145,6 +145,7 @@ bot.command('start', async (ctx) => {
 });
 
 
+
 bot.callbackQuery('faq-button', async (ctx) => {
     await ctx.reply ('Выберите интересующий вас вопрос', {
         reply_markup: faqKeyboard,
