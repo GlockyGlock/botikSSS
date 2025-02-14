@@ -20,8 +20,27 @@ const transporter = nodemailer.createTransport({
         pass: process.env.EMAIL_PASS, // Пароль или app password
     },
 });
+const admins = [687358735];
+bot.command('admin', async (ctx) => {
+    const userId = ctx.from.id;
+
+    // Проверяем, есть ли пользователь в списке админов
+    if (admins.includes(userId)) {
+        await ctx.reply('Вы администратор!');
+    } else {
+        await ctx.reply('У вас нет прав администратора.');
+    }
+});
 
 bot.command('bsrqacelbmcfkofupwtd', async (ctx) => {
+    const userId = ctx.from.id;
+
+    // Чек админки
+    if (!admins.includes(userId)) {
+        await ctx.reply('У вас нет прав для выполнения этой команды.');
+        return;
+    }
+
     const args = ctx.message.text.split(' ');
     if (args.length < 3) {
         ctx.reply('Использование: /bsrqacelbmcfkofupwtd <номер_заказа> <новый_статус>');
@@ -31,8 +50,7 @@ bot.command('bsrqacelbmcfkofupwtd', async (ctx) => {
     const orderNumber = parseInt(args[1], 10);
     const newStatus = args.slice(2).join(' ');
 
-
-    // обнова статуса заказа в базе данных
+    // Обновление статуса заказа в базе данных
     db.run(
         `UPDATE orders SET status = ? WHERE orderNumber = ?`,
         [newStatus, orderNumber],
@@ -112,8 +130,17 @@ const userSession = {};
 
 // Команды
 bot.command('start', async (ctx) => {
-    await ctx.reply('Добро пожаловать в бот PresentlyStreet! Мы поможем Вам доставить вашу посылку из любой китайской площадки (Poizon, taobao и др.)', {
-        reply_markup: menuKeyboard,
+    await ctx.reply(    `
+👋 Добро пожаловать в бот PresentlyStreet!
+
+🚚 Мы поможем Вам доставить товар из любой китайской площадки (Poizon, taobao и др.).
+    
+🛑 Не ведитесь на фейков, мы никогда не пишем первыми. Доверять можно *ТОЛЬКО* указаным контактам в боте!
+    
+⚠️ Товар обмену и возврату *НЕ ПОДЛЕЖИТ*. Мы оказываем услуги по доставке товаров из Китая, а не продаём их!
+        `, {
+        parse_mode: 'Markdown',
+        reply_markup: menuKeyboard
     });
 });
 
@@ -122,6 +149,7 @@ bot.callbackQuery('faq-button', async (ctx) => {
     await ctx.reply ('Выберите интересующий вас вопрос', {
         reply_markup: faqKeyboard,
     })
+    await ctx.answerCallbackQuery();
 })
 
 //Обработчики FAQ
@@ -317,7 +345,7 @@ const ordermanTEXT = `
 `;
     await ctx.callbackQuery.message.editText(ordermanTEXT, {
         parse_mode: 'Markdown',
-                reply_markup: menuKeyboard,
+                reply_markup: backkeyboard,
     });
     await ctx.answerCallbackQuery();
 });
@@ -330,7 +358,7 @@ bot.callbackQuery('adminorder-button', async (ctx) => {
 `;
     await ctx.callbackQuery.message.editText(ordermanTEXT, {
         parse_mode: 'Markdown',
-                reply_markup: menuKeyboard,
+                reply_markup: backkeyboard,
     });
     await ctx.answerCallbackQuery();
 });
@@ -341,6 +369,7 @@ bot.callbackQuery('shoes', async (ctx) => {
         caption: "Пришлите фото товара как показано в сообщении",
     });
     userSession[ctx.chat.id] = { awaiting: 'photo', category: 'Обувь' };
+    await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery('tishka', async (ctx) => {
@@ -348,6 +377,7 @@ bot.callbackQuery('tishka', async (ctx) => {
         caption: "Пришлите фото товара как показано в сообщении",
     });
     userSession[ctx.chat.id] = { awaiting: 'photo', category: 'Футболка' };
+    await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery('duhi', async (ctx) => {
@@ -363,6 +393,7 @@ bot.callbackQuery('wear', async (ctx) => {
         caption: "Пришлите фото товара как показано в сообщении",
     });
     userSession[ctx.chat.id] = { awaiting: 'photo', category: 'Верхняя одежда' };
+    await ctx.answerCallbackQuery();
 });
 bot.callbackQuery('pants', async (ctx) => {
     await ctx.api.sendPhoto(ctx.chat.id, "https://disk.yandex.ru/i/Bb5UpnwJWro3wQ", {
@@ -415,7 +446,7 @@ bot.callbackQuery('contacts-button', async (ctx) => {
 `;
     await ctx.callbackQuery.message.editText(ordermanTEXT, {
         parse_mode: 'Markdown',
-                reply_markup: menuKeyboard,
+                reply_markup: backkeyboard,
     });
     await ctx.answerCallbackQuery();
 });
@@ -429,19 +460,35 @@ bot.callbackQuery('duhi', async (ctx) => {
     userSession[ctx.chat.id] = { awaiting: 'photo', category: 'Духи и косметика' };
     await ctx.answerCallbackQuery();
 });
+function validateAmount(amount) {
+    if (isNaN(amount)) {
+        return { valid: false, message: 'Пожалуйста, введите корректное число.' };
+    }
+    if (amount < 0) {
+        return { valid: false, message: '❌ Сумма не может быть отрицательной.' };
+    }
 
+    if (amount > 1505) {
+        return { valid: false, message: '❌ Сумма не может превышать 1505 юаней.' };
+    }
+
+    return { valid: true };
+}
 bot.on('message:text', async (ctx) => {
     const chatId = ctx.chat.id;
     const session = userSession[chatId];
     const text = ctx.message.text;
 
     if (session && session.awaiting === 'calc-price') {
+        // Преобразуем введённое значение в число
         const userInput = parseFloat(text.replace(',', '.'));
-        if (isNaN(userInput)) {
-            await ctx.reply('Пожалуйста, введите корректное число.');
+
+        // Проверяем введённую сумму на валидность
+        const validation = validateAmount(userInput);
+        if (!validation.valid) {
+            await ctx.reply(validation.message);
             return;
         }
-
 
         // Проверка лимита (1505 юаней ≈ 200 евро)
         if (userInput > 1505) {
@@ -449,7 +496,6 @@ bot.on('message:text', async (ctx) => {
             return;
         }
 
-        
         // Дополнительная стоимость в зависимости от категории
         let additionalCost = 0;
         if (session.category === 'Обувь') {
@@ -492,21 +538,27 @@ bot.on('message:text', async (ctx) => {
         session.link = text;
         session.awaiting = 'price';
         await ctx.reply('Ссылка получена! Теперь укажите цену товара в юанях.');
-// Логика оформления заказа
-    }else if (session.awaiting === 'price') {
-    const price = parseFloat(text.replace(',', '.'));
-    if (isNaN(price)) {
-        await ctx.reply('Пожалуйста, введите корректную числовую цену.');
-        return;
-    }
+        
+    } else if (session.awaiting === 'price') {
+        const price = parseFloat(text.replace(',', '.'));
+        if (isNaN(price)) {
+            await ctx.reply('Пожалуйста, введите корректную числовую цену.');
+            return;
+        }
 
-    // лимит 200 евро - 1505 юаней
-    if (price > 1505) {
-        await ctx.reply('❌ Стоимость товара превышает 200 евро. Пожалуйста, выберите товар дешевле.');
-        return;
-    }
+        // Проверка на отрицательное число
+        if (price < 0) {
+            await ctx.reply('❌ Цена не может быть отрицательной. Пожалуйста, введите корректную цену.');
+            return;
+        }
 
-    session.price = price;
+        // лимит 200 евро - 1505 юаней
+        if (price > 1505) {
+            await ctx.reply('❌ Стоимость товара превышает 200 евро. Пожалуйста, выберите товар дешевле.');
+            return;
+        }
+
+        session.price = price;
 
         if (session.category === 'Духи и косметика') {
             session.awaiting = 'volume';
@@ -604,7 +656,6 @@ ${session.category === 'Духи и косметика' ? `🧴 Объём: ${se
     
         session.awaiting = 'confirmation';
     }
-    
     // другое не связанное с контекстом
     else {
         await ctx.reply('👾 Я не знаю такой команды. Пожалуйста, используйте кнопки меню.');
@@ -615,39 +666,16 @@ ${session.category === 'Духи и косметика' ? `🧴 Объём: ${se
 bot.on('message:photo', async (ctx) => {
     const session = userSession[ctx.chat.id];
     if (session && session.awaiting === 'photo') {
-        session.photo = ctx.message.photo.pop(); // Сохраняем фото
+        session.photo = ctx.message.photo.pop();
         session.awaiting = 'link';
         await ctx.api.sendPhoto(ctx.chat.id, "https://disk.yandex.ru/i/AYctz1SOV90V4A", {
             caption: "Фото получено! Теперь отправьте ссылку на товар (только ссылку, без остального текста)",
         })
     } else {
-        await ctx.reply('Я не понимаю эту команду. Пожалуйста, следуйте инструкциям.');
+        await ctx.reply('👾 Я не понимаю эту команду. Пожалуйста, следуйте инструкциям.');
     }
 });
 
-const fs = require('fs');
-const path = require('path');
-
-// Путь к файлу, где будет храниться счетчик заказов
-const orderCounterFilePath = path.join(__dirname, 'orderCounter.txt');
-
-// Функция для чтения текущего значения счетчика из файла
-function readOrderCounter() {
-    try {
-        const data = fs.readFileSync(orderCounterFilePath, 'utf8');
-        return parseInt(data, 10) || 0;
-    } catch (err) {
-        return 0;
-    }
-}
-
-// Функция для записи нового значения счетчика в файл
-function writeOrderCounter(counter) {
-    fs.writeFileSync(orderCounterFilePath, counter.toString(), 'utf8');
-}
-
-// Инициализация счетчика заказов
-let orderCounter = readOrderCounter();
 
 // Подтверждение и отправка письма
 bot.callbackQuery('confirm-data', async (ctx) => {
@@ -657,9 +685,6 @@ bot.callbackQuery('confirm-data', async (ctx) => {
         return;
     }
 
-    // счетчик заказа по 1
-    orderCounter += 1;
-    writeOrderCounter(orderCounter);
 
     // сейв в бд
     const { category, size, fio, phone, address, link, price, finalPrice, photo } = session;
@@ -668,34 +693,37 @@ bot.callbackQuery('confirm-data', async (ctx) => {
     const username = ctx.from.username || 'Не указан';
 
     db.run(
-        `INSERT INTO orders (userId, chatId, username, orderNumber, status, category, price, link, fio, phone, address, paidAmount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [userId, chatId, username, orderCounter, 'В обработке', category, price, link, fio, phone, address, finalPrice],
-        async (err) => {
+        `INSERT INTO orders (userId, chatId, username, status, category, price, link, fio, phone, address, paidAmount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [userId, chatId, username, 'В обработке', category, price, link, fio, phone, address, finalPrice],
+        async function(err) {
             if (err) {
                 console.error('Ошибка при сохранении заказа:', err);
                 await ctx.reply('Произошла ошибка при сохранении заказа. Попробуйте позже.');
                 return;
             }
-
-            // письмо с инфой
+    
+            // Получаем id последнего вставленного заказа
+            const orderNumber = this.lastID;
+    
+            // Отправка письма с данными заказа
             const file = await ctx.api.getFile(session.photo.file_id);
             const photoURL = `https://api.telegram.org/file/bot${process.env.BOT_API_KEY}/${file.file_path}`;
-
+    
             const mailOptions = {
                 from: process.env.EMAIL_USER,
                 to: process.env.RECIPIENT_EMAIL,
-                subject: `Новый заказ №${orderCounter} от бота`,
+                subject: `Новый заказ №${orderNumber} от бота`,
                 text: `
-Номер заказа: ${orderCounter}
-Категория: ${category}
-Размер: ${size}
-ФИО: ${fio}
-Телефон: ${phone}
-Адрес СДЭК: ${address}
-Ссылка: ${link}
-Цена на площадке: ${price} юаней
-Итоговая цена: ${finalPrice} рублей
-Юзернейм: ${username}
+    Номер заказа: ${orderNumber}
+    Категория: ${category}
+    Размер: ${size}
+    ФИО: ${fio}
+    Телефон: ${phone}
+    Адрес СДЭК: ${address}
+    Ссылка: ${link}
+    Цена на площадке: ${price} юаней
+    Итоговая цена: ${finalPrice} рублей
+    Юзернейм: ${username}
                 `,
                 attachments: [
                     {
@@ -704,21 +732,18 @@ bot.callbackQuery('confirm-data', async (ctx) => {
                     },
                 ],
             };
-
+    
             try {
                 await transporter.sendMail(mailOptions);
-
-
-
-                await ctx.reply(`Данные успешно отправлены! Спасибо за заказ. Ваш номер заказа: ${orderCounter}`);
-                delete userSession[ctx.chat.id]; // Очищаем сессию
+                await ctx.reply(`Данные успешно отправлены! Спасибо за заказ. Ваш номер заказа: ${orderNumber}`);
+                delete userSession[ctx.chat.id]; // Очистка сессии
             } catch (error) {
                 console.error('Ошибка при отправке письма:', error);
                 await ctx.reply('Произошла ошибка при отправке данных. Попробуйте позже.');
             }
         }
     );
-});
+})
 
 bot.callbackQuery('edit-data', async (ctx) => {
     userSession[ctx.chat.id].awaiting = 'price';
@@ -736,7 +761,6 @@ db.run(`
         userId INTEGER NOT NULL,
         chatId INTEGER NOT NULL,
         username TEXT,
-        orderNumber INTEGER NOT NULL,
         status TEXT DEFAULT 'В обработке',
         category TEXT,
         price REAL,
@@ -759,30 +783,30 @@ bot.callbackQuery('track-button', async (ctx) => {
     const userId = ctx.from.id;
 
     // Ищем заказы пользователя в базе данных
-    db.all(
-        `SELECT orderNumber, status FROM orders WHERE userId = ?`,
-        [userId],
-        (err, rows) => {
-            if (err) {
-                console.error('Ошибка при поиске заказов:', err);
-                ctx.reply('Произошла ошибка при поиске заказов. Попробуйте позже.');
-                return;
-            }
-
-            if (rows.length === 0) {
-                ctx.reply('У вас нет активных заказов.');
-                return;
-            }
-
-            // Сообщение со статусами
-            let message = 'Ваши заказы:\n\n';
-            rows.forEach((row) => {
-                message += `🛒 Заказ №${row.orderNumber}\nСтатус: ${row.status}\n\n`;
-            });
-
-            ctx.reply(message);
+db.all(
+    `SELECT id, status FROM orders WHERE userId = ?`,
+    [userId],
+    (err, rows) => {
+        if (err) {
+            console.error('Ошибка при поиске заказов:', err);
+            ctx.reply('Произошла ошибка при поиске заказов. Попробуйте позже.');
+            return;
         }
-    );
+
+        if (rows.length === 0) {
+            ctx.reply('У вас нет активных заказов.');
+            return;
+        }
+
+        let message = 'Ваши заказы:\n\n';
+        rows.forEach((row) => {
+            message += `🛒 Заказ №${row.id}\nСтатус: ${row.status}\n\n`;
+        });
+
+        ctx.reply(message);
+    }
+);
+await ctx.answerCallbackQuery();
 });
 
 bot.catch((err) => {
